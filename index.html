@@ -40,7 +40,7 @@
   --risk-low:#16a34a;
   --vuln-severe:#dc2626;      /* 0.5-1m */
   --vuln-moderate:#fb923c;    /* 1-1.5m */
-  --vuln-low:#059669;         /* 1.5-2m */
+  --vuln-low:#6b7280;         /* 1.5-2m — GREY (replaced green) */
   --shadow: 0 1px 0 rgba(255,255,255,.04) inset, 0 1px 2px rgba(0,0,0,.4);
   --display: 'Fraunces', 'Times New Roman', serif;
   --body: 'Geist', 'Inter', system-ui, sans-serif;
@@ -406,7 +406,7 @@ body{
           <div class="legend-row"><div class="dot" style="background:repeating-linear-gradient(45deg,transparent 0 3px,#dc2626 3px 5px),#bbf7d0"></div><div class="label">High risk</div><div class="val">&lt;1 m</div></div>
         </div>
 
-        <!-- BUILDING VULNERABILITY LAYER (fixed color mapping) -->
+        <!-- BUILDING VULNERABILITY LAYER (updated: grey for low vulnerability instead of green) -->
         <div class="layer" data-layer="buildings" style="margin-top:8px">
           <div class="swatch buildings"></div>
           <div class="info"><div class="name">Building vulnerability</div><div class="desc">Footprints colored by expected flood-water height</div></div>
@@ -415,7 +415,7 @@ body{
         <div class="legend hidden" id="legend-buildings">
           <div class="legend-row"><div class="dot" style="background:#dc2626;"></div><div class="label">0.5 – 1 m</div><div class="val">Severe</div></div>
           <div class="legend-row"><div class="dot" style="background:#fb923c;"></div><div class="label">1 – 1.5 m</div><div class="val">Moderate</div></div>
-          <div class="legend-row"><div class="dot" style="background:#059669;"></div><div class="label">1.5 – 2 m</div><div class="val">Low</div></div>
+          <div class="legend-row"><div class="dot" style="background:#6b7280;"></div><div class="label">1.5 – 2 m</div><div class="val">Low (grey)</div></div>
         </div>
 
         <!-- DRAINAGE DENSITY -->
@@ -470,7 +470,7 @@ body{
 
 <script>
 // ============================================================
-// FLOOD RISK DASHBOARD — FIXED BUILDING VULNERABILITY COLOR MAPPING
+// FLOOD RISK DASHBOARD — BUILDING VULNERABILITY: LOW = GREY (#6b7280)
 // ============================================================
 const STATUS = (msg) => { document.getElementById('ld-status').textContent = msg };
 
@@ -521,18 +521,19 @@ function applyHatchFills(){
 }
 map.on('zoomend moveend', () => { if (layers.flood && map.hasLayer(layers.flood)) { ensureHatchPatterns(); applyHatchFills(); } });
 
-// ----- HELPER: BUILDING VULNERABILITY COLOR (matches legend exactly) -----
-// severe (0.5-1m) → #dc2626, moderate (1-1.5m) → #fb923c, low (1.5-2m) → #059669
+// ----- HELPER: BUILDING VULNERABILITY COLOR (EXACT MATCH WITH LEGEND: GREY FOR LOW)
+// severe (0.5-1m) → #dc2626, moderate (1-1.5m) → #fb923c, low (1.5-2m) → #6b7280 (grey)
 function buildingVulnerabilityColor(depthStr){
   if (!depthStr) return '#6b7280';
   const s = String(depthStr).trim();
   if (s === "0.5-1" || s === "0.5-1 m" || s.includes("0.5") && s.includes("1")) return "#dc2626";
   if (s === "1-1.5" || s === "1-1.5 m" || s === "1.0-1.5" || s.includes("1-1.5")) return "#fb923c";
-  if (s === "1.5-2" || s === "1.5-2 m" || s.includes("1.5-2")) return "#059669";
+  // low category: 1.5-2m becomes grey (previously green)
+  if (s === "1.5-2" || s === "1.5-2 m" || s.includes("1.5-2")) return "#6b7280";
   return "#6b7280";
 }
 
-// flood risk zone color
+// flood risk zone color (unchanged)
 function riskColor(r){
   if (r === 'Low') return '#16a34a';
   if (r === 'Medium') return '#f59e0b';
@@ -567,7 +568,7 @@ function buildFloodLayer(geo){
 }
 
 function buildBuildingsLayer(geo){
-  // canvas flag for performance, colors now perfectly synced with legend
+  // canvas for performance, color mapping now uses grey for low vulnerability (1.5-2m)
   layers.buildings = L.geoJSON(geo, {
     renderer: L.canvas({ padding: 0.5 }),
     style: f => ({
@@ -579,9 +580,10 @@ function buildBuildingsLayer(geo){
     onEachFeature: (f, lyr) => {
       const p = f.properties;
       let severityLabel = "";
-      if (buildingVulnerabilityColor(p.water) === "#dc2626") severityLabel = "Severe";
-      else if (buildingVulnerabilityColor(p.water) === "#fb923c") severityLabel = "Moderate";
-      else if (buildingVulnerabilityColor(p.water) === "#059669") severityLabel = "Low";
+      const fillCol = buildingVulnerabilityColor(p.water);
+      if (fillCol === "#dc2626") severityLabel = "Severe";
+      else if (fillCol === "#fb923c") severityLabel = "Moderate";
+      else if (fillCol === "#6b7280") severityLabel = "Low (grey)";
       else severityLabel = "Unknown";
       lyr.bindPopup(`
         <div class="popup-title">Building footprint</div>
@@ -621,7 +623,7 @@ function buildQuartiersLayer(geo){
   });
 }
 
-// ----- STATISTICS (updated to reflect severe vulnerability: water depth 0.5-1m) -----
+// ----- STATISTICS (unchanged, severe vulnerability = water depth 0.5-1m) -----
 function computeStats(buildings, quartiers, drainage){
   document.getElementById('stat-buildings').innerHTML = fmt(buildings.features.length);
   let area = 0;
@@ -640,7 +642,6 @@ function computeStats(buildings, quartiers, drainage){
   }
   for(const f of quartiers.features) area += polyAreaKm2(f.geometry);
   document.getElementById('stat-area').innerHTML = fmt(area,2)+'<sup>km²</sup>';
-  // severe vulnerability = buildings with water depth "0.5-1" (0.5-1 m)
   const severeCount = buildings.features.filter(f => {
     const w = (f.properties.water || '').trim();
     return w === "0.5-1" || w === "0.5-1 m" || (w.includes("0.5") && w.includes("1"));
@@ -659,7 +660,7 @@ function computeStats(buildings, quartiers, drainage){
     STATUS('Building flood zones…');
     floodData = window.FLOOD_DATA;
     buildFloodLayer(floodData);
-    STATUS('Footprints (vulnerability mapping corrected)…');
+    STATUS('Footprints (grey for low vulnerability)…');
     buildBuildingsLayer(window.BUILDINGS_DATA);
     STATUS('Drainage heatmap…');
     buildDrainageLayer(window.DRAINAGE_DATA);
