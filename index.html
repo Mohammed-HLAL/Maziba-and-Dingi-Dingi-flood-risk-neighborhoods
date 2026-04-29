@@ -793,11 +793,33 @@ function buildFloodLayer(geo){
 function buildBuildingsLayer(geo){
   layers.buildings = L.geoJSON(geo, {
     renderer: L.canvas({ padding: 0.5 }),  // canvas for the 4k polygons — much faster
-    style: f => ({
-      color: '#0d1117',
-      weight: 0.4,
-      fillColor: waterColor(f.properties.water),
-      fillOpacity: 0.85,
+  style: f => {
+  const water = f.properties.water;
+
+  let color;
+
+  // HIGH RISK → near river
+  if (water === '1.7-2') {
+    color = '#dc2626'; // 🔴 RED
+  }
+
+  // MEDIUM
+  else if (water === '1.1-1.5') {
+    color = '#f59e0b'; // 🟠 ORANGE
+  }
+
+  // LOW → far from river
+  else {
+    color = '#16a34a'; // 🟢 GREEN
+  }
+
+  return {
+    color: '#111827',
+    weight: 0.3,
+    fillColor: color,
+    fillOpacity: 0.85,
+  };
+},
     }),
     onEachFeature: (f, lyr) => {
       const p = f.properties;
