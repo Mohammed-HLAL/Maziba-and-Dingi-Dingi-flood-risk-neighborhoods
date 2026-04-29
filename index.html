@@ -1,0 +1,953 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Kinshasa Flood Risk Atlas · Maziba & Dingi-Dingi</title>
+
+<!-- Leaflet -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
+
+<!-- Embedded data — loaded as script tags so the file works from file:// -->
+<script src="data_js/quartiers_data.js"></script>
+<script src="data_js/flood_data.js"></script>
+<script src="data_js/buildings_data.js"></script>
+<script src="data_js/drainage_data.js"></script>
+
+<!-- Fonts: distinctive serif display + clean grotesque body -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,500;9..144,600;9..144,800&family=Geist+Mono:wght@400;500&family=Geist:wght@300;400;500;600&display=swap" rel="stylesheet">
+
+<style>
+:root{
+  --ink:#0d1117;
+  --ink-2:#161b22;
+  --ink-3:#21262d;
+  --line:#30363d;
+  --line-2:#1f242c;
+  --paper:#f6f3ec;
+  --paper-2:#eeeae0;
+  --text:#e6edf3;
+  --text-dim:#8b949e;
+  --text-mute:#6e7681;
+  --accent:#d9b86f;        /* warm sand — Kinshasa earth tones */
+  --accent-2:#5fbed8;      /* water */
+  --risk-high:#dc2626;
+  --risk-medium:#f59e0b;
+  --risk-low:#16a34a;
+  --vuln-1:#fde68a;
+  --vuln-2:#fb923c;
+  --vuln-3:#dc2626;
+  --vuln-4:#7c2d12;
+  --shadow: 0 1px 0 rgba(255,255,255,.04) inset, 0 1px 2px rgba(0,0,0,.4);
+  --display: 'Fraunces', 'Times New Roman', serif;
+  --body: 'Geist', 'Inter', system-ui, sans-serif;
+  --mono: 'Geist Mono', ui-monospace, monospace;
+}
+
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden}
+body{
+  font-family:var(--body);
+  background:var(--ink);
+  color:var(--text);
+  font-size:13px;
+  line-height:1.5;
+  -webkit-font-smoothing:antialiased;
+}
+
+/* ---------- LAYOUT ---------- */
+.app{
+  display:grid;
+  grid-template-columns: 360px 1fr;
+  height:100vh;
+}
+.sidebar{
+  background:var(--ink);
+  border-right:1px solid var(--line);
+  display:flex;flex-direction:column;
+  overflow:hidden;
+  position:relative;
+}
+.map-wrap{
+  position:relative;
+  background:#0a0a0a;
+}
+
+/* ---------- SIDEBAR ---------- */
+.brand{
+  padding:24px 24px 20px;
+  border-bottom:1px solid var(--line);
+  position:relative;
+}
+.brand .mark{
+  display:flex;align-items:baseline;gap:10px;
+  font-family:var(--display);
+  font-weight:500;
+  font-size:28px;
+  letter-spacing:-0.02em;
+  color:var(--paper);
+  font-variation-settings:"opsz" 144;
+}
+.brand .mark::before{
+  content:"";
+  display:inline-block;
+  width:14px;height:14px;
+  border-radius:50%;
+  background:radial-gradient(circle at 30% 30%, var(--accent-2), #1a4d5e);
+  box-shadow:0 0 12px rgba(95,190,216,.4);
+  align-self:center;
+}
+.brand .mark em{
+  font-style:italic;
+  font-weight:300;
+  color:var(--accent);
+}
+.brand .tag{
+  margin-top:6px;
+  font-family:var(--mono);
+  font-size:10px;
+  letter-spacing:.18em;
+  text-transform:uppercase;
+  color:var(--text-mute);
+}
+.brand .scope{
+  margin-top:14px;
+  font-size:12px;
+  color:var(--text-dim);
+}
+.brand .scope strong{color:var(--paper);font-weight:500}
+
+.scroll{
+  flex:1;
+  overflow-y:auto;
+  scrollbar-width:thin;
+  scrollbar-color:var(--line) transparent;
+}
+.scroll::-webkit-scrollbar{width:6px}
+.scroll::-webkit-scrollbar-thumb{background:var(--line);border-radius:3px}
+
+.section{
+  padding:18px 24px;
+  border-bottom:1px solid var(--line-2);
+}
+.section h3{
+  font-family:var(--mono);
+  font-size:10px;
+  font-weight:500;
+  letter-spacing:.2em;
+  text-transform:uppercase;
+  color:var(--text-mute);
+  margin-bottom:14px;
+  display:flex;align-items:center;justify-content:space-between;
+}
+.section h3 .num{
+  font-family:var(--display);
+  font-style:italic;
+  font-weight:300;
+  font-size:14px;
+  color:var(--accent);
+  letter-spacing:0;
+  text-transform:none;
+}
+
+/* ---------- LAYER TOGGLES ---------- */
+.layer{
+  display:flex;align-items:flex-start;gap:12px;
+  padding:11px 12px;
+  margin:0 -12px;
+  border-radius:6px;
+  cursor:pointer;
+  transition:background .15s ease;
+  user-select:none;
+  position:relative;
+}
+.layer:hover{background:var(--ink-2)}
+.layer.active{background:var(--ink-2)}
+.layer.active::before{
+  content:"";position:absolute;left:-24px;top:14px;bottom:14px;width:2px;
+  background:var(--accent);
+}
+
+.layer .swatch{
+  width:34px;height:34px;
+  border-radius:4px;
+  flex-shrink:0;
+  margin-top:1px;
+  position:relative;
+  overflow:hidden;
+}
+.swatch.flood{
+  background:
+    repeating-linear-gradient(45deg,transparent 0 5px,rgba(220,38,38,.6) 5px 7px),
+    linear-gradient(135deg,#fecaca,#fca5a5);
+}
+.swatch.buildings{
+  background:linear-gradient(135deg,var(--vuln-1),var(--vuln-3) 60%,var(--vuln-4));
+}
+.swatch.drainage{
+  background:radial-gradient(circle at 50% 50%, #00ff88, #0066ff 40%, #1a0a3a 80%);
+}
+.swatch.quartiers{
+  background:transparent;
+  border:2px dashed #a855f7;
+}
+
+.layer .info{flex:1;min-width:0}
+.layer .info .name{
+  font-size:13px;
+  font-weight:500;
+  color:var(--paper);
+  margin-bottom:2px;
+}
+.layer .info .desc{
+  font-size:11px;
+  color:var(--text-mute);
+  line-height:1.45;
+}
+
+.layer .toggle{
+  width:32px;height:18px;
+  background:var(--ink-3);
+  border-radius:9px;
+  position:relative;
+  flex-shrink:0;
+  margin-top:4px;
+  transition:background .2s;
+}
+.layer .toggle::after{
+  content:"";
+  position:absolute;
+  top:2px;left:2px;
+  width:14px;height:14px;
+  background:var(--text-mute);
+  border-radius:50%;
+  transition:all .2s;
+}
+.layer.active .toggle{background:var(--accent)}
+.layer.active .toggle::after{
+  left:16px;background:var(--ink);
+}
+
+/* ---------- LEGEND ---------- */
+.legend{margin-top:8px}
+.legend.hidden{display:none}
+.legend-row{
+  display:flex;align-items:center;gap:10px;
+  padding:5px 0;
+  font-size:11px;
+}
+.legend-row .dot{
+  width:14px;height:14px;border-radius:3px;flex-shrink:0;
+  border:1px solid rgba(255,255,255,.08);
+}
+.legend-row .label{flex:1;color:var(--text-dim)}
+.legend-row .val{
+  font-family:var(--mono);
+  font-size:10px;
+  color:var(--text-mute);
+}
+
+/* ---------- STATS ---------- */
+.stats{
+  display:grid;grid-template-columns:1fr 1fr;
+  gap:1px;
+  background:var(--line-2);
+  margin:0 -24px;
+  padding:0;
+  border-top:1px solid var(--line-2);
+  border-bottom:1px solid var(--line-2);
+}
+.stat{
+  background:var(--ink);
+  padding:14px 16px;
+}
+.stat .v{
+  font-family:var(--display);
+  font-size:24px;
+  font-weight:500;
+  font-variation-settings:"opsz" 60;
+  letter-spacing:-0.02em;
+  color:var(--paper);
+  line-height:1.1;
+}
+.stat .v sup{font-size:11px;font-weight:400;color:var(--text-dim);margin-left:2px}
+.stat .l{
+  font-family:var(--mono);
+  font-size:9px;
+  letter-spacing:.16em;
+  text-transform:uppercase;
+  color:var(--text-mute);
+  margin-top:4px;
+}
+
+/* ---------- FOOTER ---------- */
+.foot{
+  padding:14px 24px;
+  border-top:1px solid var(--line);
+  font-family:var(--mono);
+  font-size:9px;
+  letter-spacing:.1em;
+  text-transform:uppercase;
+  color:var(--text-mute);
+  display:flex;justify-content:space-between;
+}
+.foot a{color:var(--text-dim);text-decoration:none}
+.foot a:hover{color:var(--accent)}
+
+/* ---------- MAP OVERLAYS ---------- */
+.map-titlecard{
+  position:absolute;
+  top:24px;left:24px;
+  z-index:500;
+  background:rgba(13,17,23,.92);
+  backdrop-filter:blur(8px);
+  -webkit-backdrop-filter:blur(8px);
+  border:1px solid var(--line);
+  border-radius:6px;
+  padding:14px 18px;
+  max-width:340px;
+  box-shadow:0 8px 24px rgba(0,0,0,.4);
+}
+.map-titlecard .eyebrow{
+  font-family:var(--mono);
+  font-size:9px;letter-spacing:.2em;text-transform:uppercase;
+  color:var(--accent);
+  margin-bottom:4px;
+}
+.map-titlecard h1{
+  font-family:var(--display);
+  font-weight:400;
+  font-size:22px;
+  letter-spacing:-0.01em;
+  color:var(--paper);
+  font-variation-settings:"opsz" 144;
+}
+.map-titlecard h1 em{
+  font-style:italic;font-weight:300;color:var(--accent);
+}
+.map-titlecard .sub{
+  margin-top:6px;
+  font-size:11px;color:var(--text-dim);
+}
+
+.scenario-bar{
+  position:absolute;
+  bottom:24px;left:50%;
+  transform:translateX(-50%);
+  z-index:500;
+  background:rgba(13,17,23,.92);
+  backdrop-filter:blur(8px);
+  -webkit-backdrop-filter:blur(8px);
+  border:1px solid var(--line);
+  border-radius:8px;
+  padding:10px 8px 10px 16px;
+  display:flex;align-items:center;gap:14px;
+  box-shadow:0 8px 24px rgba(0,0,0,.4);
+}
+.scenario-bar .lbl{
+  font-family:var(--mono);
+  font-size:9px;
+  letter-spacing:.18em;
+  text-transform:uppercase;
+  color:var(--text-mute);
+}
+.scenario-bar .opts{display:flex;gap:4px}
+.scenario-bar button{
+  background:transparent;
+  border:1px solid transparent;
+  color:var(--text-dim);
+  font-family:var(--mono);
+  font-size:11px;
+  padding:6px 12px;
+  border-radius:4px;
+  cursor:pointer;
+  transition:all .15s;
+}
+.scenario-bar button:hover{color:var(--paper);background:var(--ink-2)}
+.scenario-bar button.active{
+  background:var(--accent);color:var(--ink);font-weight:500;
+}
+.scenario-bar button.active .meta{color:rgba(13,17,23,.6)}
+.scenario-bar button .meta{
+  display:block;font-size:9px;
+  margin-top:1px;color:var(--text-mute);letter-spacing:.05em;
+}
+
+/* compass / scale aesthetic touch */
+.attrib-corner{
+  position:absolute;bottom:8px;right:8px;
+  z-index:400;
+  font-family:var(--mono);font-size:9px;
+  color:var(--text-mute);letter-spacing:.05em;
+}
+
+/* leaflet popup styling */
+.leaflet-popup-content-wrapper{
+  background:var(--ink);
+  color:var(--text);
+  border-radius:6px;
+  box-shadow:0 12px 32px rgba(0,0,0,.5);
+  border:1px solid var(--line);
+  padding:0;
+}
+.leaflet-popup-content{
+  margin:14px 16px;font-family:var(--body);font-size:12px;
+}
+.leaflet-popup-tip{background:var(--ink);border:1px solid var(--line)}
+.popup-title{
+  font-family:var(--display);font-size:16px;font-weight:500;
+  color:var(--paper);margin-bottom:6px;
+  font-variation-settings:"opsz" 100;
+}
+.popup-row{
+  display:flex;justify-content:space-between;
+  padding:3px 0;
+  border-top:1px dashed var(--line-2);
+}
+.popup-row:first-of-type{border-top:none;margin-top:6px}
+.popup-row .k{color:var(--text-mute);font-size:11px}
+.popup-row .v{color:var(--paper);font-family:var(--mono);font-size:11px}
+.popup-badge{
+  display:inline-block;padding:2px 8px;border-radius:3px;
+  font-family:var(--mono);font-size:10px;font-weight:500;
+  letter-spacing:.08em;text-transform:uppercase;
+}
+.b-high{background:#7f1d1d;color:#fecaca}
+.b-medium{background:#78350f;color:#fed7aa}
+.b-low{background:#14532d;color:#bbf7d0}
+
+/* loader */
+.loader{
+  position:absolute;inset:0;
+  display:flex;align-items:center;justify-content:center;
+  background:var(--ink);
+  z-index:1000;
+  transition:opacity .6s;
+}
+.loader.hidden{opacity:0;pointer-events:none}
+.loader-inner{
+  text-align:center;
+}
+.loader .spinner{
+  width:42px;height:42px;
+  border:2px solid var(--line);
+  border-top-color:var(--accent);
+  border-radius:50%;
+  animation:spin 1s linear infinite;
+  margin:0 auto 16px;
+}
+.loader .ld-title{
+  font-family:var(--display);font-size:18px;
+  color:var(--paper);font-weight:400;letter-spacing:-0.01em;
+}
+.loader .ld-status{
+  font-family:var(--mono);font-size:10px;
+  letter-spacing:.18em;text-transform:uppercase;
+  color:var(--text-mute);margin-top:8px;
+}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* hide leaflet defaults that clash */
+.leaflet-container{background:#0a0a0a;font-family:var(--body)}
+.leaflet-control-attribution{
+  background:rgba(13,17,23,.85)!important;
+  color:var(--text-mute)!important;
+  font-size:9px!important;
+}
+.leaflet-control-attribution a{color:var(--text-dim)!important}
+.leaflet-bar a{
+  background:rgba(13,17,23,.92)!important;
+  color:var(--paper)!important;
+  border-color:var(--line)!important;
+}
+.leaflet-bar a:hover{background:var(--ink-2)!important}
+
+/* responsive */
+@media (max-width: 900px){
+  .app{grid-template-columns:1fr;grid-template-rows:auto 1fr}
+  .sidebar{max-height:46vh}
+  .map-titlecard{display:none}
+}
+</style>
+</head>
+<body>
+
+<div class="app">
+
+  <!-- ============== SIDEBAR ============== -->
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="mark">Hydro<em>lens</em></div>
+      <div class="tag">Flood Risk Atlas · v1.0</div>
+      <div class="scope">
+        <strong>Maziba &amp; Dingi-Dingi</strong>  Quartiers of Matete, Kinshasa, DRC.
+        A multi-layer atlas of flood exposure, building vulnerability and drainage capacity.
+      </div>
+    </div>
+
+    <div class="scroll">
+
+      <div class="section">
+        <h3><span>Indicators</span><span class="num">i.</span></h3>
+        <div class="stats">
+          <div class="stat"><div class="v" id="stat-buildings">—</div><div class="l">Buildings</div></div>
+          <div class="stat"><div class="v" id="stat-area">—<sup>km²</sup></div><div class="l">Area covered</div></div>
+          <div class="stat"><div class="v" id="stat-highrisk">—<sup>%</sup></div><div class="l">in high-risk zone</div></div>
+          <div class="stat"><div class="v" id="stat-drain">—<sup>km</sup></div><div class="l">Drainage network</div></div>
+        </div>
+      </div>
+
+      <div class="section">
+        <h3><span>Layers</span><span class="num">ii.</span></h3>
+
+        <div class="layer active" data-layer="flood">
+          <div class="swatch flood"></div>
+          <div class="info">
+            <div class="name">Flood risk zones</div>
+            <div class="desc">Composite hazard scenario — High / Medium / Low</div>
+          </div>
+          <div class="toggle"></div>
+        </div>
+        <div class="legend" id="legend-flood">
+          <div class="legend-row"><div class="dot" style="background:repeating-linear-gradient(45deg,transparent 0 3px,#16a34a 3px 5px),#fecaca"></div><div class="label">Low risk</div><div class="val">≥ 1.5 m</div></div>
+          <div class="legend-row"><div class="dot" style="background:repeating-linear-gradient(45deg,transparent 0 3px,#f59e0b 3px 5px),#fed7aa"></div><div class="label">Medium risk</div><div class="val">1.0 – 1.5 m</div></div>
+          <div class="legend-row"><div class="dot" style="background:repeating-linear-gradient(45deg,transparent 0 3px,#dc2626 3px 5px),#bbf7d0"></div><div class="label">High risk</div><div class="val">&lt;1 m</div></div>
+        </div>
+
+        <div class="layer" data-layer="buildings" style="margin-top:8px">
+          <div class="swatch buildings"></div>
+          <div class="info">
+            <div class="name">Building vulnerability</div>
+            <div class="desc">Footprints colored by expected flood-water height</div>
+          </div>
+          <div class="toggle"></div>
+        </div>
+        <div class="legend hidden" id="legend-buildings">
+          <div class="legend-row"><div class="dot" style="background:#dc2626"></div><div class="label">0.5 – 1 m</div><div class="val">Severe</div></div>
+          <div class="legend-row"><div class="dot" style="background:#fb923c"></div><div class="label">1 – 1.5 m</div><div class="val">Moderate</div></div>
+          <div class="legend-row"><div class="dot" style="background:#059669"></div><div class="label">1.5 – 2 m</div><div class="val">Low</div></div>
+        </div>
+
+        <div class="layer" data-layer="drainage" style="margin-top:8px">
+          <div class="swatch drainage"></div>
+          <div class="info">
+            <div class="name">Drainage density</div>
+            <div class="desc">Heat-map of street &amp; channel network coverage</div>
+          </div>
+          <div class="toggle"></div>
+        </div>
+        <div class="legend hidden" id="legend-drainage">
+          <div class="legend-row"><div class="dot" style="background:linear-gradient(90deg,#1a0a3a,#0066ff,#00ff88,#ffff00,#ff4400)"></div><div class="label">Low → High density</div><div class="val">routes/km²</div></div>
+        </div>
+
+        <div class="layer active" data-layer="quartiers" style="margin-top:8px">
+          <div class="swatch quartiers"></div>
+          <div class="info">
+            <div class="name">Quartier boundaries</div>
+            <div class="desc">Maziba &amp; Dingi-Dingi administrative limits</div>
+          </div>
+          <div class="toggle"></div>
+        </div>
+
+      </div>
+
+      <div class="section">
+        <h3><span>Basemap</span><span class="num">iii.</span></h3>
+        <div class="layer" data-base="osm" style="padding:8px 12px">
+          <div class="info"><div class="name">OpenStreetMap</div><div class="desc">Default street reference</div></div>
+          <div class="toggle"></div>
+        </div>
+        <div class="layer active" data-base="carto" style="padding:8px 12px;margin-top:4px">
+          <div class="info"><div class="name">Carto Voyager</div><div class="desc">Soft, neutral reference</div></div>
+          <div class="toggle"></div>
+        </div>
+        <div class="layer" data-base="dark" style="padding:8px 12px;margin-top:4px">
+          <div class="info"><div class="name">Carto Dark Matter</div><div class="desc">Inverted, focus on data</div></div>
+          <div class="toggle"></div>
+        </div>
+        <div class="layer" data-base="sat" style="padding:8px 12px;margin-top:4px">
+          <div class="info"><div class="name">Esri Satellite</div><div class="desc">Aerial imagery</div></div>
+          <div class="toggle"></div>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="foot">
+      <span>Data · OSM · Local survey</span>
+      <a href="#" id="reset-view">Reset view ↺</a>
+    </div>
+  </aside>
+
+  <!-- ============== MAP ============== -->
+  <main class="map-wrap">
+    <div class="map-titlecard">
+      <div class="eyebrow">Composite Atlas</div>
+      <h1>Flood risk in <em>Maziba</em> &amp; <em>Dingi-Dingi</em></h1>
+    </div>
+
+    <div class="scenario-bar" id="scenario-bar">
+      <span class="lbl">Scenario</span>
+      <div class="opts">
+        <button data-risk="all" class="active">All <span class="meta">composite</span></button>
+        <button data-risk="High">High <span class="meta"></span>0.5-1m</button>
+        <button data-risk="Medium">Medium <span class="meta"></span>1–1.5m</span></button>
+        <button data-risk="Low">Low <span class="meta"></span>1.5-2m</button>
+      </div>
+    </div>
+
+    <div id="map" style="width:100%;height:100%;"></div>
+
+    <div class="loader" id="loader">
+      <div class="loader-inner">
+        <div class="spinner"></div>
+        <div class="ld-title">Loading the atlas…</div>
+        <div class="ld-status" id="ld-status">Reading shapefiles</div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+/* ====================================================================
+   Flood risk dashboard
+   ==================================================================== */
+
+const STATUS = (msg) => { document.getElementById('ld-status').textContent = msg };
+
+// 1. Map setup ---------------------------------------------------------
+const CENTER = [-4.3970, 15.3615];
+// Use an SVG renderer so we can attach hatch <pattern> defs to flood polygons.
+// Buildings & other big layers stay on canvas via preferCanvas fallback.
+const svgRenderer = L.svg({ padding: 0.5 });
+const map = L.map('map', {
+  center: CENTER,
+  zoom: 16,
+  zoomControl: true,
+  attributionControl: true,
+  renderer: L.canvas({ padding: 0.5 }),
+});
+
+const baseLayers = {
+  osm: L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19, attribution: '© OpenStreetMap contributors'
+  }),
+  carto: L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png', {
+    maxZoom: 19, attribution: '© OpenStreetMap · © Carto'
+  }),
+  dark: L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png', {
+    maxZoom: 19, attribution: '© OpenStreetMap · © Carto'
+  }),
+  sat: L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+    maxZoom: 19, attribution: 'Tiles © Esri'
+  }),
+};
+let currentBase = baseLayers.carto;
+currentBase.addTo(map);
+
+// Re-apply hatch fills when the SVG renderer redraws (zoom/pan can recreate paths)
+map.on('zoomend moveend', () => {
+  if (layers.flood && map.hasLayer(layers.flood)) {
+    ensureHatchPatterns();
+    applyHatchFills();
+  }
+});
+
+// 2. Helpers -----------------------------------------------------------
+function riskColor(r){
+  if (r === 'Low') return '#16a34a';
+  if (r === 'Medium') return '#f59e0b';
+  if (r === 'High') return '#dc2626';
+  return '#888';
+}
+
+function waterColor(w){
+  if (w === '1.7-2') return '#dc2626';
+  if (w === '1.1-1.5') return '#fb923c';
+  if (w === '0.5-1') return '#fde68a';
+  return '#a3a3a3';
+}
+
+function fmt(n, d=0){
+  return new Intl.NumberFormat('en-US',{maximumFractionDigits:d}).format(n);
+}
+
+// SVG hatch pattern for flood zones (matches reference image #2)
+function ensureHatchPatterns(){
+  // Find or create the SVG element used by our SVG renderer
+  let svg = document.querySelector('.leaflet-overlay-pane svg');
+  if (!svg) return false;
+  let defs = svg.querySelector('defs');
+  if (!defs){
+    defs = document.createElementNS('http://www.w3.org/2000/svg','defs');
+    svg.insertBefore(defs, svg.firstChild);
+  }
+  const colors = { high:'#dc2626', medium:'#f59e0b', low:'#16a34a' };
+  for (const [id, color] of Object.entries(colors)){
+    if (defs.querySelector('#hatch-'+id)) continue;
+    const p = document.createElementNS('http://www.w3.org/2000/svg','pattern');
+    p.setAttribute('id','hatch-'+id);
+    p.setAttribute('patternUnits','userSpaceOnUse');
+    p.setAttribute('width','8'); p.setAttribute('height','8');
+    p.setAttribute('patternTransform','rotate(45)');
+    p.innerHTML = `<rect width="8" height="8" fill="${color}" fill-opacity="0.18"/>
+                   <line x1="0" y1="0" x2="0" y2="8" stroke="${color}" stroke-width="3" stroke-opacity="0.7"/>`;
+    defs.appendChild(p);
+  }
+  return true;
+}
+function applyHatchFills(){
+  if (!layers.flood) return;
+  layers.flood.eachLayer(l => {
+    const r = (l.feature.properties.risk_level || '').toLowerCase();
+    const path = l._path;
+    if (path) path.setAttribute('fill', `url(#hatch-${r})`);
+  });
+}
+
+// 3. Layer state -------------------------------------------------------
+const layers = { flood:null, buildings:null, drainage:null, quartiers:null };
+let floodData = null;
+let activeRisk = 'all';
+
+// 4. Data load (data is already embedded via <script> tags) -----------
+(function init(){
+  try{
+    if (!window.FLOOD_DATA || !window.BUILDINGS_DATA || !window.DRAINAGE_DATA || !window.QUARTIERS_DATA){
+      throw new Error('Data files not loaded — make sure the data_js/ folder is next to index.html');
+    }
+
+    STATUS('Building flood zones…');
+    floodData = window.FLOOD_DATA;
+    buildFloodLayer(floodData);
+
+    STATUS('Building footprints…');
+    buildBuildingsLayer(window.BUILDINGS_DATA);
+
+    STATUS('Drainage heatmap…');
+    buildDrainageLayer(window.DRAINAGE_DATA);
+
+    STATUS('Boundaries…');
+    buildQuartiersLayer(window.QUARTIERS_DATA);
+
+    // Stats
+    computeStats(window.BUILDINGS_DATA, window.QUARTIERS_DATA, window.DRAINAGE_DATA);
+
+    // Apply initial visibility
+    layers.flood.addTo(map);
+    layers.quartiers.addTo(map);
+
+    // Fit bounds to quartiers
+    map.fitBounds(layers.quartiers.getBounds(), {padding:[40,40]});
+
+    STATUS('Ready');
+    setTimeout(() => document.getElementById('loader').classList.add('hidden'), 250);
+  } catch(e){
+    console.error(e);
+    STATUS('Error: ' + e.message);
+  }
+})();
+
+// 5. Build layers ------------------------------------------------------
+function buildFloodLayer(geo){
+  // Filter helper applied via style + filter
+  layers.flood = L.geoJSON(geo, {
+    renderer: svgRenderer,            // force SVG so we can use <pattern> fills
+    filter: f => activeRisk === 'all' || f.properties.risk_level === activeRisk,
+    style: f => {
+      const c = riskColor(f.properties.risk_level);
+      return {
+        color: c,
+        weight: 1.2,
+        opacity: 0.9,
+        fillColor: c,
+        fillOpacity: 0.28,
+        fillRule: 'evenodd',
+      };
+    },
+    onEachFeature: (f, lyr) => {
+      const p = f.properties;
+      const cls = 'b-' + (p.risk_level||'').toLowerCase();
+      lyr.bindPopup(`
+        <div class="popup-title">Flood scenario ${p.Scenario||'—'}</div>
+        <span class="popup-badge ${cls}">${p.risk_level||'?'} risk</span>
+        <div class="popup-row"><span class="k">Water level</span><span class="v">${p.water_level} m</span></div>
+        <div class="popup-row"><span class="k">Scenario ID</span><span class="v">#${p.Scenario}</span></div>
+      `);
+    }
+  });
+
+  // Replace fill with hatch pattern after first add
+  layers.flood.on('add', () => {
+    setTimeout(() => {
+      ensureHatchPatterns();
+      applyHatchFills();
+    }, 30);
+  });
+}
+
+function buildBuildingsLayer(geo){
+  layers.buildings = L.geoJSON(geo, {
+    renderer: L.canvas({ padding: 0.5 }),  // canvas for the 4k polygons — much faster
+    style: f => ({
+      color: '#0d1117',
+      weight: 0.4,
+      fillColor: waterColor(f.properties.water),
+      fillOpacity: 0.85,
+    }),
+    onEachFeature: (f, lyr) => {
+      const p = f.properties;
+      lyr.bindPopup(`
+        <div class="popup-title">Building footprint</div>
+        <div class="popup-row"><span class="k">Quartier</span><span class="v">${p.quartier}</span></div>
+        <div class="popup-row"><span class="k">Surface</span><span class="v">${p.sup_m2} m²</span></div>
+        <div class="popup-row"><span class="k">Expected water</span><span class="v">${p.water} m</span></div>
+        <div class="popup-row"><span class="k">Confidence</span><span class="v">${p.confidence}</span></div>
+      `);
+    }
+  });
+}
+
+function buildDrainageLayer(geo){
+  // Build heatmap from points
+  const pts = geo.features.map(f => {
+    const c = f.geometry.coordinates;
+    return [c[1], c[0], 0.6];
+  });
+  layers.drainage = L.heatLayer(pts, {
+    radius: 14,
+    blur: 18,
+    maxZoom: 18,
+    minOpacity: 0.4,
+    gradient: {
+      0.0: '#1a0a3a',
+      0.2: '#0033cc',
+      0.4: '#0066ff',
+      0.6: '#00ddaa',
+      0.8: '#ffff00',
+      1.0: '#ff4400',
+    },
+  });
+}
+
+function buildQuartiersLayer(geo){
+  layers.quartiers = L.geoJSON(geo, {
+    style: () => ({
+      color: '#a855f7',
+      weight: 3,
+      opacity: 0.9,
+      fill: false,
+      dashArray: '6 4',
+    }),
+    onEachFeature: (f, lyr) => {
+      const p = f.properties;
+      lyr.bindPopup(`
+        <div class="popup-title">${p.nom}</div>
+        <div class="popup-row"><span class="k">Commune</span><span class="v">${p.commune}</span></div>
+        <div class="popup-row"><span class="k">Antenne</span><span class="v">${p.antenne}</span></div>
+        <div class="popup-row"><span class="k">Territoire</span><span class="v">${p.territoire}</span></div>
+        <div class="popup-row"><span class="k">Chef</span><span class="v">${p.chef||'—'}</span></div>
+      `);
+      // Label
+      const center = lyr.getBounds().getCenter();
+      L.marker(center, {
+        icon: L.divIcon({
+          className:'qlabel',
+          html:`<div style="font-family:'Fraunces',serif;font-style:italic;font-weight:500;font-size:18px;color:#fff;text-shadow:0 0 6px #000,0 0 14px #000,0 0 20px rgba(168,85,247,.6);letter-spacing:.02em;white-space:nowrap;">${p.nom}</div>`,
+          iconSize:[120,24], iconAnchor:[60,12],
+        }),
+        interactive:false,
+      }).addTo(map);
+    }
+  });
+}
+
+// 6. Stats -------------------------------------------------------------
+function computeStats(buildings, quartiers, drainage){
+  document.getElementById('stat-buildings').innerHTML = fmt(buildings.features.length);
+
+  // crude area in km² from quartiers using equirectangular approximation
+  let area = 0;
+  for (const f of quartiers.features){
+    area += polyAreaKm2(f.geometry);
+  }
+  document.getElementById('stat-area').innerHTML = fmt(area, 2)+'<sup>km²</sup>';
+
+  // % buildings in high-risk water zone
+  const high = buildings.features.filter(f => f.properties.water === '1.7-2').length;
+  document.getElementById('stat-highrisk').innerHTML = fmt(100*high/buildings.features.length,0)+'<sup>%</sup>';
+
+  // drainage km — sample is 8000 of 129545 points = density-scaled length proxy
+  // points sampled at 0.0001° spacing roughly = 11m → length proxy
+  const proxy = (129545 * 0.011);
+  document.getElementById('stat-drain').innerHTML = fmt(proxy,0)+'<sup>km</sup>';
+}
+function polyAreaKm2(g){
+  // Use shoelace + cos(lat) correction. Good enough for small areas.
+  const polys = (g.type === 'MultiPolygon') ? g.coordinates : [g.coordinates];
+  let total = 0;
+  for (const poly of polys){
+    const ring = poly[0];
+    let a = 0;
+    for (let i=0;i<ring.length-1;i++){
+      a += ring[i][0]*ring[i+1][1] - ring[i+1][0]*ring[i][1];
+    }
+    a = Math.abs(a)/2; // in deg²
+    const meanLat = ring.reduce((s,p)=>s+p[1],0)/ring.length;
+    const km2 = a * 111.32 * 111.32 * Math.cos(meanLat*Math.PI/180);
+    total += km2;
+  }
+  return total;
+}
+
+// 7. Layer toggles -----------------------------------------------------
+document.querySelectorAll('.layer[data-layer]').forEach(el => {
+  el.addEventListener('click', () => {
+    const k = el.dataset.layer;
+    el.classList.toggle('active');
+    const on = el.classList.contains('active');
+    if (on) layers[k].addTo(map); else map.removeLayer(layers[k]);
+    const lg = document.getElementById('legend-'+k);
+    if (lg) lg.classList.toggle('hidden', !on);
+  });
+});
+
+// 8. Basemap switch ----------------------------------------------------
+document.querySelectorAll('.layer[data-base]').forEach(el => {
+  el.addEventListener('click', () => {
+    document.querySelectorAll('.layer[data-base]').forEach(o => o.classList.remove('active'));
+    el.classList.add('active');
+    map.removeLayer(currentBase);
+    currentBase = baseLayers[el.dataset.base];
+    currentBase.addTo(map);
+    currentBase.bringToBack();
+  });
+});
+
+// 9. Scenario filter ---------------------------------------------------
+document.querySelectorAll('#scenario-bar button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('#scenario-bar button').forEach(o => o.classList.remove('active'));
+    btn.classList.add('active');
+    activeRisk = btn.dataset.risk;
+    if (layers.flood){
+      const wasOn = map.hasLayer(layers.flood);
+      map.removeLayer(layers.flood);
+      buildFloodLayer(floodData);
+      if (wasOn) layers.flood.addTo(map);
+    }
+  });
+});
+
+// 10. Reset view -------------------------------------------------------
+document.getElementById('reset-view').addEventListener('click', e => {
+  e.preventDefault();
+  if (layers.quartiers) map.fitBounds(layers.quartiers.getBounds(), {padding:[40,40]});
+});
+</script>
+</body>
+</html>
